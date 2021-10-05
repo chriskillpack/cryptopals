@@ -1,12 +1,10 @@
 package cryptopals
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/aes"
 	"encoding/base64"
 	"encoding/hex"
-	"io"
 	"os"
 	"sort"
 	"strings"
@@ -51,24 +49,11 @@ func TestChallenge3(t *testing.T) {
 
 func TestChallenge4(t *testing.T) {
 	c := corpusFromFile(t, "testdata/alice_in_wonderland.txt")
+	xors := readFile(t, "testdata/challenge_4.txt")
 
-	xors, err := os.Open("testdata/challenge_4.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer xors.Close()
-
-	r := bufio.NewReader(xors)
 	var bestCandidate string
 	var bestScore float64
-	for {
-		xor, err := r.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			t.Fatal(err)
-		}
+	for _, xor := range strings.Split(xors, "\n") {
 		xor = strings.TrimSuffix(xor, "\n")
 		data := decodeHex(t, xor)
 		s, _, sc := bestSingleXor(data, c)
@@ -184,23 +169,10 @@ func TestChallenge7(t *testing.T) {
 }
 
 func TestChallenge8(t *testing.T) {
-	ciphertexts, err := os.Open("testdata/challenge_8.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ciphertexts.Close()
+	ciphertexts := readFile(t, "testdata/challenge_8.txt")
 
-	r := bufio.NewReader(ciphertexts)
-	i := 0
 	found := false
-	for {
-		hexciphertext, err := r.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			t.Fatal(err)
-		}
+	for i, hexciphertext := range strings.Split(ciphertexts, "\n") {
 		ciphertext := decodeHex(t, strings.TrimRight(hexciphertext, "\n"))
 		if detectECB(ciphertext) {
 			t.Logf("Ciphertext %d is encrypted with ECB", i+1)
@@ -273,9 +245,14 @@ func decodeBase64File(t *testing.T, file string) []byte {
 }
 
 func corpusFromFile(t *testing.T, file string) map[rune]float64 {
+	data := readFile(t, file)
+	return buildRuneFreqMap(data)
+}
+
+func readFile(t *testing.T, file string) string {
 	data, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return buildRuneFreqMap(string(data))
+	return string(data)
 }
