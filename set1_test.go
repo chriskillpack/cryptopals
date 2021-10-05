@@ -3,6 +3,7 @@ package cryptopals
 import (
 	"bufio"
 	"bytes"
+	"crypto/aes"
 	"encoding/base64"
 	"encoding/hex"
 	"io"
@@ -94,14 +95,7 @@ I go crazy when I hear a cymbal`)
 }
 
 func TestChallenge6(t *testing.T) {
-	ciphertext, err := os.ReadFile("testdata/challenge_6.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	cipher, err := base64.StdEncoding.DecodeString(string(ciphertext))
-	if err != nil {
-		t.Fatal(err)
-	}
+	cipher := decodeBase64File(t, "testdata/challenge_6.txt")
 
 	// Compute candidate rotating XOR cipher lengths (keysize) using minimal "edit distances"
 	type candidate struct {
@@ -117,6 +111,8 @@ func TestChallenge6(t *testing.T) {
 		dist := hammingDistance(cipher[:keysize*8], cipher[keysize*8:keysize*8*2])
 		results = append(results, candidate{float64(dist) / float64(keysize), keysize})
 	}
+	// This Slice is unnecessary since we only take the top result but it's left over
+	// from when I was following challenge advice and taking top 4 results.
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].editDist < results[j].editDist
 	})
@@ -167,6 +163,26 @@ func TestChallenge6(t *testing.T) {
 	}
 }
 
+func TestChallenge7(t *testing.T) {
+	contents := decodeBase64File(t, "testdata/challenge_7.txt")
+
+	cipher, err := aes.NewCipher([]byte("YELLOW SUBMARINE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// In this test we are fortunate that the input length is exactly a multiple of
+	// cipher.BlockSize() = 16 for AES-128.
+	dst := make([]byte, len(contents))
+	for i := 0; i < len(contents); i += cipher.BlockSize() {
+		cipher.Decrypt(dst[i:], contents[i:])
+	}
+	if !strings.HasPrefix(string(dst), "I'm back and I'm ringin' the bell") {
+		t.Error("Decrypted result did not match")
+	}
+	t.Log(string(dst))
+}
+
 func TestHammingDistance(t *testing.T) {
 	distance := hammingDistance([]byte("this is a test"), []byte("wokka wokka!!!"))
 	if distance != 37 {
@@ -197,6 +213,18 @@ func decodeHex(t *testing.T, h string) []byte {
 		t.Fatal(err)
 	}
 	return x
+}
+
+func decodeBase64File(t *testing.T, file string) []byte {
+	text, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := base64.StdEncoding.DecodeString(string(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
 }
 
 func corpusFromFile(t *testing.T, file string) map[rune]float64 {
