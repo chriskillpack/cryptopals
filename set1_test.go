@@ -183,11 +183,56 @@ func TestChallenge7(t *testing.T) {
 	t.Log(string(dst))
 }
 
+func TestChallenge8(t *testing.T) {
+	ciphertexts, err := os.Open("testdata/challenge_8.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ciphertexts.Close()
+
+	r := bufio.NewReader(ciphertexts)
+	i := 0
+	found := false
+	for {
+		hexciphertext, err := r.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			t.Fatal(err)
+		}
+		ciphertext := decodeHex(t, strings.TrimRight(hexciphertext, "\n"))
+		if detectECB(ciphertext) {
+			t.Logf("Ciphertext %d is encrypted with ECB", i+1)
+			found = true
+			break
+		}
+		i++
+	}
+	if !found {
+		t.Error("Unable to detect ECB encrypted ciphertext")
+	}
+}
+
 func TestHammingDistance(t *testing.T) {
 	distance := hammingDistance([]byte("this is a test"), []byte("wokka wokka!!!"))
 	if distance != 37 {
 		t.Errorf("Expected 37, got %d", distance)
 	}
+}
+
+// Using this hint "the same 16 byte plaintext block will always produce the same 16 byte ciphertext."
+// we cut data into 16 byte blocks and check if a block appears more than once in data
+func detectECB(data []byte) bool {
+	block := make(map[string]bool)
+	for i := 0; i < len(data); i += 16 {
+		cand := string(data[i : i+16])
+		if _, ok := block[cand]; ok {
+			return true
+		}
+		block[cand] = false
+	}
+	return false
 }
 
 func bestSingleXor(in []byte, corpus map[rune]float64) (text string, xor byte, score float64) {
