@@ -159,9 +159,7 @@ func TestChallenge7(t *testing.T) {
 	// In this test we are fortunate that the input length is exactly a multiple of
 	// cipher.BlockSize() = 16 for AES-128.
 	dst := make([]byte, len(contents))
-	for i := 0; i < len(contents); i += cipher.BlockSize() {
-		cipher.Decrypt(dst[i:], contents[i:])
-	}
+	decryptECB(contents, dst, cipher)
 	if !strings.HasPrefix(string(dst), "I'm back and I'm ringin' the bell") {
 		t.Error("Decrypted result did not match")
 	}

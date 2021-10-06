@@ -1,6 +1,7 @@
 package cryptopals
 
 import (
+	"crypto/cipher"
 	"encoding/base64"
 	"encoding/hex"
 	"math/bits"
@@ -77,4 +78,14 @@ func hammingDistance(a, b []byte) int {
 	}
 
 	return distance
+}
+
+func decryptECB(in, out []byte, cipher cipher.Block) {
+	if len(out) != len(in) {
+		panic("Unequal length buffers")
+	}
+
+	for i := 0; i < len(in); i += cipher.BlockSize() {
+		cipher.Decrypt(out[i:], in[i:])
+	}
 }
