@@ -179,7 +179,6 @@ func TestChallenge8(t *testing.T) {
 			found = true
 			break
 		}
-		i++
 	}
 	if !found {
 		t.Error("Unable to detect ECB encrypted ciphertext")
@@ -245,8 +244,7 @@ func decodeBase64File(t *testing.T, file string) []byte {
 }
 
 func corpusFromFile(t *testing.T, file string) map[rune]float64 {
-	data := readFile(t, file)
-	return buildRuneFreqMap(data)
+	return buildRuneFreqMap(readFile(t, file))
 }
 
 func readFile(t *testing.T, file string) string {
