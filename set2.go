@@ -1,21 +1,25 @@
 package cryptopals
 
-import "crypto/cipher"
+import (
+	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	crand "crypto/rand"
+	"fmt"
+	"math/rand"
+)
 
+// Returns data padded to the blocksize amount using PKCS7
 func pkcs7Padding(data []byte, blocksize int) []byte {
-	padding := blocksize - (len(data) % blocksize)
-	if padding > 255 {
+	pad := blocksize - (len(data) % blocksize)
+	if pad > 255 {
 		panic("Cannot represent padding amount in a byte")
 	}
-	out := make([]byte, len(data)+padding)
-	copy(out, data)
-	for i := len(data); i < len(data)+padding; i++ {
-		out[i] = byte(padding)
-	}
-	return out
+	padding := bytes.Repeat([]byte{byte(pad)}, pad)
+	return append(data, padding...)
 }
 
-func encryptECB(in, out []byte, cipher cipher.Block) {
+func encryptECB(out, in []byte, cipher cipher.Block) {
 	if len(out) != len(in) {
 		panic("Unequal length buffers")
 	}
@@ -27,7 +31,7 @@ func encryptECB(in, out []byte, cipher cipher.Block) {
 
 // WARNING: This has not been tested yet
 // iv = Initialization Vector, the contents are overwritten
-func encryptCBC(in, out, iv []byte, cipher cipher.Block) {
+func encryptCBC(out, in, iv []byte, cipher cipher.Block) {
 	if len(out) != len(in) {
 		panic("Unequal length buffers")
 	}
@@ -44,7 +48,7 @@ func encryptCBC(in, out, iv []byte, cipher cipher.Block) {
 }
 
 // iv = Initialization Vectgsor, the contents are overwritten
-func decryptCBC(in, out, iv []byte, cipher cipher.Block) {
+func decryptCBC(out, in, iv []byte, cipher cipher.Block) {
 	if len(out) != len(in) {
 		panic("Unequal length buffers")
 	}
@@ -59,4 +63,71 @@ func decryptCBC(in, out, iv []byte, cipher cipher.Block) {
 		copy(out[i:i+bs], scratch)
 		copy(iv, in[i:i+bs])
 	}
+}
+
+func randomAESkey() ([]byte, error) {
+	key := make([]byte, 16)
+	n, err := crand.Read(key)
+	if err != nil {
+		panic(err)
+	}
+	if n != 16 {
+		return nil, fmt.Errorf("did not get 16 random bytes")
+	}
+	return key, nil
+}
+
+func encryptionOracle(plaintext []byte) ([]byte, error) {
+	before := rand.Intn(5) + 5
+	after := rand.Intn(5) + 5
+	ln := len(plaintext)
+
+	key, err := randomAESkey()
+	if err != nil {
+		return nil, err
+	}
+
+	cipher, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	bs := cipher.BlockSize()
+
+	// With the size of the buffer known it can now be padded
+	// The return value of pkcs7Padding will be a slice of 0 bytes
+	// with pkcs7 padding at the end.
+	out := pkcs7Padding(make([]byte, before+ln+after), bs)
+
+	// Now the rest of the data can be filled in inplace.
+	// First the random prefix
+	n, err := crand.Read(out[:before])
+	if n != before {
+		return nil, err
+	}
+	// Then the plaintext body
+	copy(out[before:], plaintext)
+	// Finally the random suffix
+	n, err = crand.Read(out[before+ln : before+ln+after])
+	if n != after {
+		return nil, err
+	}
+
+	iv := make([]byte, bs)
+	for i := 0; i < len(out); i += bs {
+		if rand.Int()&1 == 0 {
+			// Encrypt ECB
+			cipher.Encrypt(out[i:i+bs], out[i:i+bs])
+		} else {
+			// Encrypt CBC
+
+			// Populate IV with random data
+			n, err := crand.Read(iv)
+			if n != len(iv) {
+				return nil, err
+			}
+			encryptCBC(out[i:i+bs], out[i:i+bs], iv, cipher)
+		}
+	}
+
+	return out, nil
 }
