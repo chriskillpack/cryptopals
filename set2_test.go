@@ -32,8 +32,17 @@ func TestChallenge10(t *testing.T) {
 	}
 }
 
+// I really struggled with this problem because I had a hard time understanding
+// what the detector was meant to do. From the problem statement:
+// "Detect the block cipher mode the function is using each time. You should
+// end up with a piece of code that, pointed at a block box that might be
+// encrypting ECB or CBC, tells you which one is happening."
+// I took this to mean "scan individual blocks in the output and determine if
+// they are ECB or CBC encrypted". I had to watch FiloSottile's live coding
+// stream to see what solution they landed on. I ended up copying them and
+// moving on.
 func TestChallenge11(t *testing.T) {
-	rand.Seed(218)
+	rand.Seed(218) // for repeatable behavior in this test
 	in := bytes.Repeat([]byte{111}, 3*16)
 
 	ecb, cbc := 0, 0
@@ -48,8 +57,10 @@ func TestChallenge11(t *testing.T) {
 			cbc++
 		}
 	}
-	// This test is brittle and relies on the specific seed but it gives us
-	// something to test
+
+	// This test is brittle, relies on the specific seed and tests against
+	// measurements from the first run, which we assume to be correct. But it
+	// gives us something.
 	if ecb != 27 {
 		t.Errorf("Expected 27:73 for ECB:CBC but got %d:%d", ecb, cbc)
 	}
