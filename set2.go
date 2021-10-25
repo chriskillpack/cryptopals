@@ -139,8 +139,10 @@ func encryptionOracle(plaintext []byte) ([]byte, error) {
 	return out, nil
 }
 
-var consistentECBKeyOnce sync.Once
-var consistentECBKey []byte
+var (
+	consistentECBKeyOnce sync.Once
+	consistentECBKey     []byte
+)
 
 func consistentECB(plaintext []byte) ([]byte, error) {
 	consistentECBKeyOnce.Do(func() {
