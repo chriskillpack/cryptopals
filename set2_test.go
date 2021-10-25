@@ -65,3 +65,66 @@ func TestChallenge11(t *testing.T) {
 		t.Errorf("Expected 27:73 for ECB:CBC but got %d:%d", ecb, cbc)
 	}
 }
+
+func TestChallenge12(t *testing.T) {
+	in := []byte("THIS IS A TEST")
+
+	// Find the blocksize of the cipher. This is achieved by having
+	// consistentECB encrypt an input of varying sizes with a single repeating
+	// value, e.g. 'A'. The sizes are chosen to be twice cipher blocksizes
+	// which is the minimum amount required to detect a repetition with ECB.
+	var detectedBS int
+	for _, i := range []int{16, 32, 48, 64} {
+		dummy := bytes.Repeat([]byte{in[0]}, i)
+		out, err := consistentECB(dummy)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if detectECB(out) {
+			detectedBS = i / 2
+			break
+		}
+	}
+	// For this example we know that the cipher blocksize is 16 bytes
+	if detectedBS != 16 {
+		t.Errorf("Expected blocksize of 16, got %d", detectedBS)
+	}
+
+	// Figure out the upper-bound of the secret length, unknown amount of pkcs
+	// padding prevents an exact determination at this time.
+	out, err := consistentECB([]byte{0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secretLenUB := len(out) - 1 // -1 for input byte
+
+	secret := ""
+	for ch := 0; ch < secretLenUB; ch++ {
+		// how many bytes at the end of the ECB block should be left for the
+		// secret token.
+		room := (ch % detectedBS) + 1
+
+		// Build the dictionary of fingerprints
+		dictionary := make(map[string][]byte)
+		for i := 0; i <= 255; i++ {
+			fragment := bytes.Repeat([]byte{in[0]}, detectedBS-room)
+			fragment = append(fragment, []byte(secret)...)
+			fragment = append(fragment, byte(i))
+			fp, err := consistentECB(fragment)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dictionary[string(fp[:detectedBS])] = fragment
+		}
+		fragment := bytes.Repeat([]byte{in[0]}, detectedBS-room)
+		out, err := consistentECB(fragment)
+		if err != nil {
+			t.Fatal(err)
+		}
+		v := dictionary[string(out[:detectedBS])]
+		secret += string(v[detectedBS-1])
+	}
+	if !strings.HasPrefix(secret, "Rollin' in my 5.Rollin' in my 5.Rollin' in my 5.Rollin' in my 5.") {
+		t.Errorf("This is not the correct secret %q", secret)
+	}
+}

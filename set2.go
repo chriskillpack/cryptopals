@@ -5,9 +5,16 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	crand "crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"math/rand"
+	"sync"
 )
+
+const challenge12Suffix = `Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkg
+aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq
+dXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUg
+YnkK`
 
 // Returns data padded to the blocksize amount using PKCS7
 func pkcs7Padding(data []byte, blocksize int) []byte {
@@ -127,6 +134,39 @@ func encryptionOracle(plaintext []byte) ([]byte, error) {
 			}
 			encryptCBC(out[i:i+bs], out[i:i+bs], iv, cipher)
 		}
+	}
+
+	return out, nil
+}
+
+var consistentECBKeyOnce sync.Once
+var consistentECBKey []byte
+
+func consistentECB(plaintext []byte) ([]byte, error) {
+	consistentECBKeyOnce.Do(func() {
+		var err error
+		consistentECBKey, err = randomAESkey()
+		if err != nil {
+			panic(err)
+		}
+	})
+
+	cipher, err := aes.NewCipher(consistentECBKey)
+	if err != nil {
+		return nil, err
+	}
+	bs := cipher.BlockSize()
+
+	decoded, err := base64.StdEncoding.DecodeString(challenge12Suffix)
+	if err != nil {
+		return nil, err
+	}
+	contents := append(plaintext, []byte(decoded)...)
+	out := pkcs7Padding(contents, bs)
+
+	for i := 0; i < len(out); i += bs {
+		// Encrypt ECB
+		cipher.Encrypt(out[i:i+bs], out[i:i+bs])
 	}
 
 	return out, nil
