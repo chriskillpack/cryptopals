@@ -128,3 +128,23 @@ func TestChallenge12(t *testing.T) {
 		t.Errorf("This is not the correct secret %q", secret)
 	}
 }
+
+func TestProfileFor(t *testing.T) {
+	pf, err := profileFor("foo@bar.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if pf != "email=foo@bar.com&role=user&uid=10" {
+		t.Errorf("Expected \"email=foo@bar.com&role=user&uid=10\", got %q", pf)
+	}
+
+	san, err := profileFor("foo@bar.com&role=admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(san, "bar.com&role") || strings.Contains(san, "role=admin") {
+		t.Errorf("Expected %q to have been sanitized", san)
+	}
+}

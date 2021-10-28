@@ -8,6 +8,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/rand"
+	"net/url"
+	"strings"
 	"sync"
 )
 
@@ -172,4 +174,21 @@ func consistentECB(plaintext []byte) ([]byte, error) {
 	}
 
 	return out, nil
+}
+
+func profileFor(email string) (string, error) {
+	// Sanitize email of '&' and '='
+	san := strings.ReplaceAll(email, "&", "")
+	san = strings.ReplaceAll(san, "=", "")
+
+	profile := url.Values{}
+	profile.Set("email", san)
+	profile.Set("uid", "10")
+	profile.Set("role", "user")
+	path, err := url.PathUnescape(profile.Encode())
+	if err != nil {
+		return "", err
+	}
+
+	return path, nil
 }
