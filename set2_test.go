@@ -3,10 +3,16 @@ package cryptopals
 import (
 	"bytes"
 	"crypto/aes"
+	"encoding/base64"
 	"math/rand"
 	"strings"
 	"testing"
 )
+
+const challenge12Suffix = `Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkg
+aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq
+dXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUg
+YnkK`
 
 func TestChallenge9(t *testing.T) {
 	out := pkcs7Padding([]byte("YELLOW SUBMARINE"), 20)
@@ -67,7 +73,10 @@ func TestChallenge11(t *testing.T) {
 }
 
 func TestChallenge12(t *testing.T) {
-	in := []byte("THIS IS A TEST")
+	unknown, err := base64.StdEncoding.DecodeString(challenge12Suffix)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Find the blocksize of the cipher. This is achieved by having
 	// consistentECB encrypt an input of varying sizes with a single repeating
@@ -75,8 +84,8 @@ func TestChallenge12(t *testing.T) {
 	// which is the minimum amount required to detect a repetition with ECB.
 	var detectedBS int
 	for _, i := range []int{16, 32, 48, 64} {
-		dummy := bytes.Repeat([]byte{in[0]}, i)
-		out, err := consistentECB(dummy)
+		dummy := bytes.Repeat([]byte{192}, i)
+		out, err := consistentECB(dummy, unknown)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -90,42 +99,41 @@ func TestChallenge12(t *testing.T) {
 		t.Errorf("Expected blocksize of 16, got %d", detectedBS)
 	}
 
-	// Figure out the upper-bound of the secret length, unknown amount of pkcs
-	// padding prevents an exact determination at this time.
-	out, err := consistentECB([]byte{0})
-	if err != nil {
-		t.Fatal(err)
-	}
-	secretLenUB := len(out) - 1 // -1 for input byte
-
-	secret := ""
-	for ch := 0; ch < secretLenUB; ch++ {
+	// TODO: Only extracts the first blocksize of unknown. Extend to extract
+	// all of unknown.
+	recovered := ""
+	for ch := 0; ch < detectedBS; ch++ {
 		// how many bytes at the end of the ECB block should be left for the
 		// secret token.
 		room := (ch % detectedBS) + 1
 
-		// Build the dictionary of fingerprints
-		dictionary := make(map[string][]byte)
+		// Build the dictionary of fingerprints for all final byte
+		// possibilities.
+		dictionary := make(map[string]byte)
 		for i := 0; i <= 255; i++ {
-			fragment := bytes.Repeat([]byte{in[0]}, detectedBS-room)
-			fragment = append(fragment, []byte(secret)...)
+			fragment := bytes.Repeat([]byte{192}, detectedBS-room)
+			fragment = append(fragment, []byte(recovered)...)
 			fragment = append(fragment, byte(i))
-			fp, err := consistentECB(fragment)
+			fp, err := consistentECB(fragment, unknown)
 			if err != nil {
 				t.Fatal(err)
 			}
-			dictionary[string(fp[:detectedBS])] = fragment
+			dictionary[string(fp[:detectedBS])] = byte(i)
 		}
-		fragment := bytes.Repeat([]byte{in[0]}, detectedBS-room)
-		out, err := consistentECB(fragment)
+
+		// Encrypt the partial block (unknown will fill out room at end of
+		// block.
+		fragment := bytes.Repeat([]byte{192}, detectedBS-room)
+		out, err := consistentECB(fragment, unknown)
 		if err != nil {
 			t.Fatal(err)
 		}
-		v := dictionary[string(out[:detectedBS])]
-		secret += string(v[detectedBS-1])
+
+		b := dictionary[string(out[:detectedBS])]
+		recovered += string(b)
 	}
-	if !strings.HasPrefix(secret, "Rollin' in my 5.Rollin' in my 5.Rollin' in my 5.Rollin' in my 5.") {
-		t.Errorf("This is not the correct secret %q", secret)
+	if !strings.HasPrefix(recovered, "Rollin' in my 5.") {
+		t.Errorf("This is not the correct secret %q", recovered)
 	}
 }
 
