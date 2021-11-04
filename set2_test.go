@@ -72,8 +72,32 @@ func TestChallenge11(t *testing.T) {
 	}
 }
 
+// Builds a 'fragment' dictionary using the encryption oracle to encrypt every
+// possible input block of the form:
+//   XXXXRRRRRRRRRRR? where X is the constant, R=recovered secret and ? will
+//                    take every value from [0,255].
+// This function assumes that the length of recovered is one character less than
+// the room we are leaving at the end. offset is the slice index of the
+// beginning of the bs sized block that the secret character is being extracted
+// from.
+func fragmentDict(recovered string, unknown []byte, offset, room, bs int) (map[string]byte, error) {
+	dictionary := make(map[string]byte)
+	for i := 0; i <= 255; i++ {
+		fragment := bytes.Repeat([]byte{192}, bs-room)
+		fragment = append(fragment, []byte(recovered)...)
+		fragment = append(fragment, byte(i))
+		out, err := consistentECB(fragment, unknown)
+		if err != nil {
+			return nil, err
+		}
+		dictionary[string(out[offset:offset+bs])] = byte(i)
+	}
+
+	return dictionary, nil
+}
+
 func TestChallenge12(t *testing.T) {
-	unknown, err := base64.StdEncoding.DecodeString(challenge12Suffix)
+	secret, err := base64.StdEncoding.DecodeString(challenge12Suffix)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,57 +106,67 @@ func TestChallenge12(t *testing.T) {
 	// consistentECB encrypt an input of varying sizes with a single repeating
 	// value, e.g. 'A'. The sizes are chosen to be twice cipher blocksizes
 	// which is the minimum amount required to detect a repetition with ECB.
-	var detectedBS int
+	var bs int
 	for _, i := range []int{16, 32, 48, 64} {
 		dummy := bytes.Repeat([]byte{192}, i)
-		out, err := consistentECB(dummy, unknown)
+		out, err := consistentECB(dummy, secret)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if detectECB(out) {
-			detectedBS = i / 2
+			bs = i / 2
 			break
 		}
 	}
 	// For this example we know that the cipher blocksize is 16 bytes
-	if detectedBS != 16 {
-		t.Errorf("Expected blocksize of 16, got %d", detectedBS)
+	if bs != 16 {
+		t.Errorf("Expected blocksize of 16, got %d", bs)
 	}
 
-	// TODO: Only extracts the first blocksize of unknown. Extend to extract
-	// all of unknown.
+	// nb is the number of bs sized blocks to cover the length of unknown
+	nb := (len(secret) + bs + 1) / bs
 	recovered := ""
-	for ch := 0; ch < detectedBS; ch++ {
-		// how many bytes at the end of the ECB block should be left for the
-		// secret token.
-		room := (ch % detectedBS) + 1
 
-		// Build the dictionary of fingerprints for all final byte
-		// possibilities.
-		dictionary := make(map[string]byte)
-		for i := 0; i <= 255; i++ {
-			fragment := bytes.Repeat([]byte{192}, detectedBS-room)
-			fragment = append(fragment, []byte(recovered)...)
-			fragment = append(fragment, byte(i))
-			fp, err := consistentECB(fragment, unknown)
+	// The problem explains how to extract the secret from the first block. To
+	// extract the secret from the other blocks we repeat the technique but
+	// shift to different blocks of the encrypted output.
+	for blk := 0; blk < nb; blk++ {
+		window := blk * bs
+		for i := 0; i < bs; i++ {
+			if window+i == len(secret) {
+				break // Have finished iterating over secret
+			}
+
+			// Build the dictionary of fingerprints of all final byte
+			// possibilities, for the window of the encrypted output currently
+			// being attacked.
+			dictionary, err := fragmentDict(recovered, secret, window, i+1, bs)
 			if err != nil {
 				t.Fatal(err)
 			}
-			dictionary[string(fp[:detectedBS])] = byte(i)
-		}
 
-		// Encrypt the partial block (unknown will fill out room at end of
-		// block.
-		fragment := bytes.Repeat([]byte{192}, detectedBS-room)
-		out, err := consistentECB(fragment, unknown)
-		if err != nil {
-			t.Fatal(err)
-		}
+			// Encrypt the partial block.
+			fragment := bytes.Repeat([]byte{192}, bs-(i+1))
+			out, err := consistentECB(fragment, secret)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-		b := dictionary[string(out[:detectedBS])]
-		recovered += string(b)
+			// Lookup the next byte of recovered from the current window
+			// encrypted output.
+			b, ok := dictionary[string(out[window:window+bs])]
+			if !ok {
+				t.Fatalf("Failed lookup for block %d index %d", blk, i)
+			}
+			recovered += string(b)
+		}
 	}
-	if !strings.HasPrefix(recovered, "Rollin' in my 5.") {
+
+	if recovered != `Rollin' in my 5.0
+With my rag-top down so my hair can blow
+The girlies on standby waving just to say hi
+Did you stop? No, I just drove by
+` {
 		t.Errorf("This is not the correct secret %q", recovered)
 	}
 }
