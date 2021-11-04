@@ -50,7 +50,7 @@ func encryptCBC(out, in, iv []byte, cipher cipher.Block) {
 	}
 }
 
-// iv = Initialization Vectgsor, the contents are overwritten
+// iv = Initialization Vector, the contents are overwritten
 func decryptCBC(out, in, iv []byte, cipher cipher.Block) {
 	if len(out) != len(in) {
 		panic("Unequal length buffers")
@@ -115,21 +115,15 @@ func encryptionOracle(plaintext []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	iv := make([]byte, bs)
-	for i := 0; i < len(out); i += bs {
-		if rand.Int()&1 == 0 {
-			// Encrypt ECB
-			cipher.Encrypt(out[i:i+bs], out[i:i+bs])
-		} else {
-			// Encrypt CBC
-
-			// Populate IV with random data
-			n, err := crand.Read(iv)
-			if n != len(iv) {
-				return nil, err
-			}
-			encryptCBC(out[i:i+bs], out[i:i+bs], iv, cipher)
+	if rand.Int()&1 == 0 {
+		encryptECB(out, out, cipher)
+	} else {
+		iv := make([]byte, bs)
+		n, err := crand.Read(iv)
+		if n != len(iv) {
+			return nil, err
 		}
+		encryptCBC(out, out, iv, cipher)
 	}
 
 	return out, nil

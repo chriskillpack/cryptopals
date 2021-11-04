@@ -80,7 +80,7 @@ func hammingDistance(a, b []byte) int {
 	return distance
 }
 
-func decryptECB(in, out []byte, cipher cipher.Block) {
+func decryptECB(out, in []byte, cipher cipher.Block) {
 	if len(out) != len(in) {
 		panic("Unequal length buffers")
 	}
