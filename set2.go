@@ -80,53 +80,29 @@ func randomAESkey() ([]byte, error) {
 	return key, nil
 }
 
-func encryptionOracle(plaintext []byte) ([]byte, error) {
-	before := rand.Intn(5) + 5
-	after := rand.Intn(5) + 5
-	ln := len(plaintext)
+func encryptionOracle() func([]byte) []byte {
+	prefix := make([]byte, rand.Intn(5)+5)
+	crand.Read(prefix)
+	suffix := make([]byte, rand.Intn(5)+5)
+	crand.Read(suffix)
 
-	key, err := randomAESkey()
-	if err != nil {
-		return nil, err
-	}
+	key, _ := randomAESkey()
+	cipher, _ := aes.NewCipher(key)
 
-	cipher, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	bs := cipher.BlockSize()
+	return func(in []byte) []byte {
+		// ENCRYPT(prefix | in | suffix) where | denotes concatenation
+		body := pkcs7Padding(append(append(prefix, in...), suffix...), cipher.BlockSize())
 
-	// With the size of the buffer known it can now be padded
-	// The return value of pkcs7Padding will be a slice of 0 bytes
-	// with pkcs7 padding at the end.
-	out := pkcs7Padding(make([]byte, before+ln+after), bs)
-
-	// Now the rest of the data can be filled in inplace.
-	// First the random prefix
-	n, err := crand.Read(out[:before])
-	if n != before {
-		return nil, err
-	}
-	// Then the plaintext body
-	copy(out[before:], plaintext)
-	// Finally the random suffix
-	n, err = crand.Read(out[before+ln : before+ln+after])
-	if n != after {
-		return nil, err
-	}
-
-	if rand.Int()&1 == 0 {
-		encryptECB(out, out, cipher)
-	} else {
-		iv := make([]byte, bs)
-		n, err := crand.Read(iv)
-		if n != len(iv) {
-			return nil, err
+		if rand.Int()&1 == 0 {
+			encryptECB(body, body, cipher)
+		} else {
+			iv := make([]byte, cipher.BlockSize())
+			crand.Read(iv)
+			encryptCBC(body, body, iv, cipher)
 		}
-		encryptCBC(out, out, iv, cipher)
-	}
 
-	return out, nil
+		return body
+	}
 }
 
 var (
@@ -151,11 +127,7 @@ func consistentECB(plaintext, secret []byte) ([]byte, error) {
 
 	contents := append(plaintext, []byte(secret)...)
 	out := pkcs7Padding(contents, bs)
-
-	for i := 0; i < len(out); i += bs {
-		// Encrypt ECB
-		cipher.Encrypt(out[i:i+bs], out[i:i+bs])
-	}
+	encryptECB(out, out, cipher)
 
 	return out, nil
 }

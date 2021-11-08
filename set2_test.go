@@ -40,14 +40,12 @@ func TestChallenge10(t *testing.T) {
 
 func TestChallenge11(t *testing.T) {
 	rand.Seed(218) // for repeatable behavior in this test
-	in := bytes.Repeat([]byte{111}, 3*16)
 
-	ecb, cbc := 0, 0
+	oracle := encryptionOracle()
+	in := bytes.Repeat([]byte{111}, 3*16)
+	var ecb, cbc int
 	for i := 0; i < 100; i++ {
-		out, err := encryptionOracle([]byte(in))
-		if err != nil {
-			t.Fatal(err)
-		}
+		out := oracle(in)
 		if detectECB(out) {
 			ecb++
 		} else {
@@ -58,8 +56,8 @@ func TestChallenge11(t *testing.T) {
 	// This test is brittle, relies on the specific seed and tests against
 	// measurements from the first run, which we assume to be correct. But it
 	// gives us something.
-	if ecb != 50 {
-		t.Errorf("Expected 27:73 for ECB:CBC but got %d:%d", ecb, cbc)
+	if ecb != 48 {
+		t.Errorf("Expected 48:52 for ECB:CBC but got %d:%d", ecb, cbc)
 	}
 }
 
