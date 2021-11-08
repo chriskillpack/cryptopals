@@ -9,7 +9,6 @@ import (
 	"math/rand"
 	"net/url"
 	"strings"
-	"sync"
 )
 
 // Returns data padded to the blocksize amount using PKCS7
@@ -105,31 +104,17 @@ func encryptionOracle() func([]byte) []byte {
 	}
 }
 
-var (
-	consistentECBKeyOnce sync.Once
-	consistentECBKey     []byte
-)
+// secret will be concatenated to in prior to encryption. Passing nil or an
+// empty byte slice to
+func consistentECBOracle(secret []byte) func([]byte) []byte {
+	key, _ := randomAESkey()
+	cipher, _ := aes.NewCipher(key)
 
-func consistentECB(plaintext, secret []byte) ([]byte, error) {
-	consistentECBKeyOnce.Do(func() {
-		var err error
-		consistentECBKey, err = randomAESkey()
-		if err != nil {
-			panic(err)
-		}
-	})
-
-	cipher, err := aes.NewCipher(consistentECBKey)
-	if err != nil {
-		return nil, err
+	return func(in []byte) []byte {
+		body := pkcs7Padding(append(in, secret...), cipher.BlockSize())
+		encryptECB(body, body, cipher)
+		return body
 	}
-	bs := cipher.BlockSize()
-
-	contents := append(plaintext, []byte(secret)...)
-	out := pkcs7Padding(contents, bs)
-	encryptECB(out, out, cipher)
-
-	return out, nil
 }
 
 func profileFor(email string) (string, error) {

@@ -69,20 +69,17 @@ func TestChallenge11(t *testing.T) {
 // the room we are leaving at the end. offset is the slice index of the
 // beginning of the bs sized block that the secret character is being extracted
 // from.
-func fragmentDict(recovered string, unknown []byte, offset, room, bs int) (map[string]byte, error) {
+func fragmentDict(recovered string, oracle func([]byte) []byte, offset, room, bs int) map[string]byte {
 	dictionary := make(map[string]byte)
 	for i := 0; i <= 255; i++ {
 		fragment := bytes.Repeat([]byte{192}, bs-room)
 		fragment = append(fragment, []byte(recovered)...)
 		fragment = append(fragment, byte(i))
-		out, err := consistentECB(fragment, unknown)
-		if err != nil {
-			return nil, err
-		}
+		out := oracle(fragment)
 		dictionary[string(out[offset:offset+bs])] = byte(i)
 	}
 
-	return dictionary, nil
+	return dictionary
 }
 
 func TestChallenge12(t *testing.T) {
@@ -91,17 +88,16 @@ func TestChallenge12(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	oracle := consistentECBOracle(secret)
+
 	// Find the blocksize of the cipher. This is achieved by having
 	// consistentECB encrypt an input of varying sizes with a single repeating
 	// value, e.g. 'A'. The sizes are chosen to be twice cipher blocksizes
 	// which is the minimum amount required to detect a repetition with ECB.
 	var bs int
-	for _, i := range []int{16, 32, 48, 64} {
+	for _, i := range []int{2, 4, 8, 16, 32, 48, 64} {
 		dummy := bytes.Repeat([]byte{192}, i)
-		out, err := consistentECB(dummy, secret)
-		if err != nil {
-			t.Fatal(err)
-		}
+		out := oracle(dummy)
 		if detectECB(out) {
 			bs = i / 2
 			break
@@ -129,17 +125,11 @@ func TestChallenge12(t *testing.T) {
 			// Build the dictionary of fingerprints of all final byte
 			// possibilities, for the window of the encrypted output currently
 			// being attacked.
-			dictionary, err := fragmentDict(recovered, secret, window, i+1, bs)
-			if err != nil {
-				t.Fatal(err)
-			}
+			dictionary := fragmentDict(recovered, oracle, window, i+1, bs)
 
 			// Encrypt the partial block.
 			fragment := bytes.Repeat([]byte{192}, bs-(i+1))
-			out, err := consistentECB(fragment, secret)
-			if err != nil {
-				t.Fatal(err)
-			}
+			out := oracle(fragment)
 
 			// Lookup the next byte of recovered from the current window
 			// encrypted output.
