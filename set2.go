@@ -117,6 +117,23 @@ func consistentECBOracle(secret []byte) func([]byte) []byte {
 	}
 }
 
+func encryptDecryptECBOracle() (enc func([]byte) []byte, dec func([]byte) []byte) {
+	key, _ := randomAESkey()
+	cipher, _ := aes.NewCipher(key)
+
+	return func(in []byte) []byte {
+			body := pkcs7Padding(in, cipher.BlockSize())
+			encryptECB(body, body, cipher)
+			return body
+		}, func(in []byte) []byte {
+			body := make([]byte, len(in))
+			copy(body, in)
+			decryptECB(body, body, cipher)
+			// TODO: discard padding?
+			return body
+		}
+}
+
 func profileFor(email string) (string, error) {
 	// Sanitize email of '&' and '='
 	san := strings.ReplaceAll(email, "&", "")

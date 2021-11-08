@@ -5,6 +5,7 @@ import (
 	"crypto/aes"
 	"encoding/base64"
 	"math/rand"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -147,6 +148,43 @@ The girlies on standby waving just to say hi
 Did you stop? No, I just drove by
 ` {
 		t.Errorf("This is not the correct secret %q", recovered)
+	}
+}
+
+func TestChallenge13(t *testing.T) {
+	encOracle, decOracle := encryptDecryptECBOracle()
+
+	// Another weakness of ECB is that each block is encrypted separately so an
+	// attacker can re-arrange or substitute blocks without detection.
+	//
+	// url.Values.Get("role") returns first value for role parameter.
+	//
+	// One input to func is AAAA@A.COMadmin which gives us ciphertext block
+	// that contains admin&role=user&.
+	// email=AAAA@A.COM|admin&role=user&|uid=16
+	//                  ^^^^^^^^^^^^^^^^ block 1
+	// Another input is an email address that pushes role= to the end of a block
+	// email=AAAAAAAAAA|AAAA@A.COM&role=|user
+	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ block 2
+	// If we concatenate block 2 onto the end of block 1 then we have ciphertext
+	// for an account email=AAAAAAAAAAAAAA@A.COM with an admin role.
+
+	prof, _ := profileFor("AAAA@A.COMadmin")
+	block1 := encOracle([]byte(prof))[16:32]
+	prof, _ = profileFor("AAAAAAAAAAAAAA@A.COM")
+	block2 := encOracle([]byte(prof))[0:32]
+	attack := append(block2, block1...)
+
+	// Attacker sets cookie to attack and sends it to web server which decrypts
+	// and checks.
+	recov := decOracle(attack)
+	values, err := url.ParseQuery(string(recov))
+	if err != nil {
+		t.Fatal(err)
+	}
+	role := values.Get("role")
+	if role != "admin" {
+		t.Errorf("Was expecting admin role, got %q", role)
 	}
 }
 
