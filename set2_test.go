@@ -70,7 +70,7 @@ func TestChallenge11(t *testing.T) {
 // the room we are leaving at the end. offset is the slice index of the
 // beginning of the bs sized block that the secret character is being extracted
 // from.
-func fragmentDict(recovered string, oracle func([]byte) []byte, offset, room, bs int) map[string]byte {
+func fragmentDict(recovered string, oracle OracleFunc, offset, room, bs int) map[string]byte {
 	dictionary := make(map[string]byte)
 	for i := 0; i <= 255; i++ {
 		fragment := bytes.Repeat([]byte{192}, bs-room)

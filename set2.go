@@ -11,6 +11,10 @@ import (
 	"strings"
 )
 
+// OracleFunc represents a function that returns the encrypted or decrypted
+// contents of in
+type OracleFunc func(in []byte) []byte
+
 // Returns data padded to the blocksize amount using PKCS7
 func pkcs7Padding(data []byte, blocksize int) []byte {
 	pad := blocksize - (len(data) % blocksize)
@@ -79,7 +83,7 @@ func randomAESkey() ([]byte, error) {
 	return key, nil
 }
 
-func encryptionOracle() func([]byte) []byte {
+func encryptionOracle() OracleFunc {
 	prefix := make([]byte, rand.Intn(5)+5)
 	crand.Read(prefix)
 	suffix := make([]byte, rand.Intn(5)+5)
@@ -106,7 +110,7 @@ func encryptionOracle() func([]byte) []byte {
 
 // secret will be concatenated to in prior to encryption. Passing nil or an
 // empty byte slice to
-func consistentECBOracle(secret []byte) func([]byte) []byte {
+func consistentECBOracle(secret []byte) OracleFunc {
 	key, _ := randomAESkey()
 	cipher, _ := aes.NewCipher(key)
 
@@ -117,7 +121,7 @@ func consistentECBOracle(secret []byte) func([]byte) []byte {
 	}
 }
 
-func encryptDecryptECBOracle() (enc func([]byte) []byte, dec func([]byte) []byte) {
+func encryptDecryptECBOracle() (enc, dec OracleFunc) {
 	key, _ := randomAESkey()
 	cipher, _ := aes.NewCipher(key)
 
