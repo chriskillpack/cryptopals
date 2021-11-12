@@ -172,7 +172,7 @@ func TestChallenge8(t *testing.T) {
 	found := false
 	for i, hexciphertext := range strings.Split(ciphertexts, "\n") {
 		ciphertext := decodeHex(t, strings.TrimRight(hexciphertext, "\n"))
-		if detectECB(ciphertext) {
+		if ecb, _ := detectECB(ciphertext); ecb {
 			t.Logf("Ciphertext %d is encrypted with ECB", i+1)
 			found = true
 			break
@@ -188,20 +188,6 @@ func TestHammingDistance(t *testing.T) {
 	if distance != 37 {
 		t.Errorf("Expected 37, got %d", distance)
 	}
-}
-
-// Using this hint "the same 16 byte plaintext block will always produce the same 16 byte ciphertext."
-// we cut data into 16 byte blocks and check if a block appears more than once in data
-func detectECB(data []byte) bool {
-	block := make(map[string]bool)
-	for i := 0; i < len(data); i += 16 {
-		cand := string(data[i : i+16])
-		if _, ok := block[cand]; ok {
-			return true
-		}
-		block[cand] = false
-	}
-	return false
 }
 
 func bestSingleXor(in []byte, corpus map[rune]float64) (text string, xor byte, score float64) {

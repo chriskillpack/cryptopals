@@ -47,7 +47,7 @@ func TestChallenge11(t *testing.T) {
 	var ecb, cbc int
 	for i := 0; i < 100; i++ {
 		out := oracle(in)
-		if detectECB(out) {
+		if found, _ := detectECB(out); found {
 			ecb++
 		} else {
 			cbc++
@@ -60,27 +60,6 @@ func TestChallenge11(t *testing.T) {
 	if ecb != 48 {
 		t.Errorf("Expected 48:52 for ECB:CBC but got %d:%d", ecb, cbc)
 	}
-}
-
-// Builds a 'fragment' dictionary using the encryption oracle to encrypt every
-// possible input block of the form:
-//   XXXXRRRRRRRRRRR? where X is the constant, R=recovered secret and ? will
-//                    take every value from [0,255].
-// This function assumes that the length of recovered is one character less than
-// the room we are leaving at the end. offset is the slice index of the
-// beginning of the bs sized block that the secret character is being extracted
-// from.
-func fragmentDict(recovered string, oracle OracleFunc, offset, room, bs int) map[string]byte {
-	dictionary := make(map[string]byte)
-	for i := 0; i <= 255; i++ {
-		fragment := bytes.Repeat([]byte{192}, bs-room)
-		fragment = append(fragment, []byte(recovered)...)
-		fragment = append(fragment, byte(i))
-		out := oracle(fragment)
-		dictionary[string(out[offset:offset+bs])] = byte(i)
-	}
-
-	return dictionary
 }
 
 func TestChallenge12(t *testing.T) {
@@ -99,7 +78,7 @@ func TestChallenge12(t *testing.T) {
 	for _, i := range []int{2, 4, 8, 16, 32, 48, 64} {
 		dummy := bytes.Repeat([]byte{192}, i)
 		out := oracle(dummy)
-		if detectECB(out) {
+		if found, _ := detectECB(out); found {
 			bs = i / 2
 			break
 		}
@@ -109,24 +88,19 @@ func TestChallenge12(t *testing.T) {
 		t.Errorf("Expected blocksize of 16, got %d", bs)
 	}
 
-	// nb is the number of bs sized blocks to cover the length of unknown
-	nb := (len(secret) + bs + 1) / bs
 	recovered := ""
 
 	// The problem explains how to extract the secret from the first block. To
 	// extract the secret from the other blocks we repeat the technique but
 	// shift to different blocks of the encrypted output.
-	for blk := 0; blk < nb; blk++ {
-		window := blk * bs
+	window := 0
+outer:
+	for {
 		for i := 0; i < bs; i++ {
-			if window+i == len(secret) {
-				break // Have finished iterating over secret
-			}
-
 			// Build the dictionary of fingerprints of all final byte
 			// possibilities, for the window of the encrypted output currently
 			// being attacked.
-			dictionary := fragmentDict(recovered, oracle, window, i+1, bs)
+			dictionary := fragmentDict(recovered, oracle, window, i+1, 0, bs)
 
 			// Encrypt the partial block.
 			fragment := bytes.Repeat([]byte{192}, bs-(i+1))
@@ -136,10 +110,15 @@ func TestChallenge12(t *testing.T) {
 			// encrypted output.
 			b, ok := dictionary[string(out[window:window+bs])]
 			if !ok {
-				t.Fatalf("Failed lookup for block %d index %d", blk, i)
+				t.Fatalf("Failed lookup for block %d index %d", window, i)
 			}
 			recovered += string(b)
+
+			if len(recovered) == len(secret) {
+				break outer
+			}
 		}
+		window += bs
 	}
 
 	if recovered != `Rollin' in my 5.0
@@ -205,5 +184,81 @@ func TestProfileFor(t *testing.T) {
 
 	if strings.Contains(san, "bar.com&role") || strings.Contains(san, "role=admin") {
 		t.Errorf("Expected %q to have been sanitized", san)
+	}
+}
+
+func TestChallenge14(t *testing.T) {
+	secret, err := base64.StdEncoding.DecodeString(challenge12Suffix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oracle := randomPrefixSecretECBOracle([]byte(secret))
+
+	// We know that there is a random byte prefix of unknown length in the
+	// ciphertext (p = prefix byte, I = input byte, s = secret byte):
+	// pppppppppppppppp|...|pppppppIIIIIIIII|IIIIIsssssssssss
+	// Because prefix is random we know that ECB ciphertext blocks are unlikely
+	// to repeat. If we pass a large enough buffer of a constant to the oracle
+	// we know at some place the ciphertext will start repeating:
+	// 00000000  fc 3b 37 9a 2f 36 ed 45  8b 83 ca 6d 13 8c db d8
+	// 00000010  b0 fd 38 20 b0 aa f4 ba  3b 85 b8 81 1a 7e 0d 7b
+	// 00000020  f9 0d b7 e0 2b c7 0f ad  d6 71 9f 90 03 dd 72 94
+	// 00000030  86 d5 01 0d 32 cc 97 88  c6 4d 0f 84 58 d6 1f 36
+	// 00000040  e3 98 0e be 91 02 f0 48  8d f3 59 95 90 a3 26 fc
+	// 00000050  e3 98 0e be 91 02 f0 48  8d f3 59 95 90 a3 26 fc
+	// 00000060  ....
+	// 00000420  45 4b cd 58 f1 f6 0a ab  92 91 b3 5f f8 2d 71 5e
+	// 00000430  ....
+	// The first block where repetition starts, offset 0x40 above, is the first
+	// full block beyond the prefix. Using this block we can perform the same
+	// bruteforce attack from Challenge 12 to extract the secret, safely away
+	// from the prefix.
+
+	// But we need one more piece of information: the prefix length so we know
+	// how much padding to add to get to the beginning of that block. This is
+	// easy, we encrypt increasing amounts of padding with the oracle until we
+	// detect ECB repetition. That requires at least two block sizes of
+	// padding.
+
+	bs := 16 // Assume it's 16 byte blocksize for this problem
+
+	// Compute how much padding is needed to get to a block boundary.
+	var pad, window int
+	var found bool
+	for pad = 1; pad < 1024; pad++ {
+		rpct := oracle(bytes.Repeat([]byte{192}, pad+bs*2))
+		if found, window = detectECB(rpct); found {
+			break
+		}
+	}
+	if !found {
+		t.Error("Failed to compute padding")
+	}
+	t.Logf("prefix found, need %d bytes of padding, clean idx is %d", pad, window)
+
+	recovered := ""
+outer:
+	for {
+		for i := 0; i < bs; i++ {
+			dict := fragmentDict(recovered, oracle, window, i+1, pad, bs)
+			fragment := bytes.Repeat([]byte{192}, pad+(bs-(i+1)))
+			out := oracle(fragment)
+			b, ok := dict[string(out[window:window+bs])]
+			if !ok {
+				t.Fatalf("Failed lookup for block %d index %d", window, i)
+			}
+			recovered += string(b)
+			if len(recovered) == len(secret) {
+				break outer
+			}
+		}
+		window += bs // Move to the next block
+	}
+	if recovered != `Rollin' in my 5.0
+With my rag-top down so my hair can blow
+The girlies on standby waving just to say hi
+Did you stop? No, I just drove by
+` {
+		t.Errorf("This is not the correct secret %q", recovered)
 	}
 }

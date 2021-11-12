@@ -83,6 +83,28 @@ func randomAESkey() ([]byte, error) {
 	return key, nil
 }
 
+// Builds a 'fragment' dictionary using the encryption oracle to encrypt every
+// possible input block of the form:
+//   XXXXRRRRRRRRRRR? where X is the constant, R=recovered secret and ? will
+//                    take every value from [0,255].
+// This function assumes that the length of recovered is one character less than
+// the room we are leaving at the end. offset is the slice index of the
+// beginning of the bs sized block that the secret character is being extracted
+// from.
+// TODO: pass arguments using a struct?
+func fragmentDict(recovered string, oracle OracleFunc, offset, room, pad, bs int) map[string]byte {
+	dictionary := make(map[string]byte)
+	for i := 0; i <= 255; i++ {
+		fragment := bytes.Repeat([]byte{192}, pad+bs-room)
+		fragment = append(fragment, []byte(recovered)...)
+		fragment = append(fragment, byte(i))
+		out := oracle(fragment)
+		dictionary[string(out[offset:offset+bs])] = byte(i)
+	}
+
+	return dictionary
+}
+
 func encryptionOracle() OracleFunc {
 	prefix := make([]byte, rand.Intn(5)+5)
 	crand.Read(prefix)
@@ -136,6 +158,20 @@ func encryptDecryptECBOracle() (enc, dec OracleFunc) {
 			// TODO: discard padding?
 			return body
 		}
+}
+
+func randomPrefixSecretECBOracle(secret []byte) OracleFunc {
+	key, _ := randomAESkey()
+	cipher, _ := aes.NewCipher(key)
+
+	prefix := make([]byte, rand.Intn(32)+10)
+	crand.Read(prefix)
+
+	return func(in []byte) []byte {
+		body := pkcs7Padding(append(append(prefix, in...), secret...), cipher.BlockSize())
+		encryptECB(body, body, cipher)
+		return body
+	}
 }
 
 func profileFor(email string) (string, error) {

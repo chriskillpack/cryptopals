@@ -66,6 +66,22 @@ func scoreText(text string, corpus map[rune]float64) float64 {
 	return score
 }
 
+// Using this hint "the same 16 byte plaintext block will always produce the
+// same 16 byte ciphertext". We cut data into 16 byte blocks and check if a
+// block appears more than once in data. Returns whether ECB was found and the
+// lowest offset it was detected.
+func detectECB(data []byte) (bool, int) {
+	block := make(map[string]int)
+	for i := 0; i < len(data); i += 16 {
+		cand := string(data[i : i+16])
+		if idx, ok := block[cand]; ok {
+			return true, idx
+		}
+		block[cand] = i
+	}
+	return false, 0
+}
+
 // Compute the Hamming Distance between two byte arrays.
 // Panics if the byte arrays are unequal length
 func hammingDistance(a, b []byte) int {
