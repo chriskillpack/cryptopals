@@ -105,6 +105,37 @@ func fragmentDict(recovered string, oracle OracleFunc, offset, room, pad, bs int
 	return dictionary
 }
 
+// recoverSecretFromECB applies the technique described in Set 2 / Challenge 12
+// to brute force extract the appended secret from beneath ECB encryption.
+// Returns empty string if it was unsuccessful.
+// window = byte offset of first block after any oracle included prefix
+// align = the byte distance from end of prefix to the next block boundary
+func recoverSecretFromECB(oracle OracleFunc, secretLen, window, align, bs int) string {
+	recovered := ""
+outer:
+	for {
+		// Set 2 Challenge 12 explains how to extract the secret from the first
+		// block. To extract the secret from the following blocks we repeat the
+		// technique in each of the remaining blocks.
+		for i := 0; i < bs; i++ {
+			dict := fragmentDict(recovered, oracle, window, i+1, align, bs)
+			fragment := bytes.Repeat([]byte{192}, align+(bs-(i+1)))
+			out := oracle(fragment)
+			b, ok := dict[string(out[window:window+bs])]
+			if !ok {
+				return ""
+			}
+			recovered += string(b)
+			if len(recovered) == secretLen {
+				break outer
+			}
+		}
+		window += bs // Move to the next block
+	}
+
+	return recovered
+}
+
 func encryptionOracle() OracleFunc {
 	prefix := make([]byte, rand.Intn(5)+5)
 	crand.Read(prefix)

@@ -88,39 +88,7 @@ func TestChallenge12(t *testing.T) {
 		t.Errorf("Expected blocksize of 16, got %d", bs)
 	}
 
-	recovered := ""
-
-	// The problem explains how to extract the secret from the first block. To
-	// extract the secret from the other blocks we repeat the technique but
-	// shift to different blocks of the encrypted output.
-	window := 0
-outer:
-	for {
-		for i := 0; i < bs; i++ {
-			// Build the dictionary of fingerprints of all final byte
-			// possibilities, for the window of the encrypted output currently
-			// being attacked.
-			dictionary := fragmentDict(recovered, oracle, window, i+1, 0, bs)
-
-			// Encrypt the partial block.
-			fragment := bytes.Repeat([]byte{192}, bs-(i+1))
-			out := oracle(fragment)
-
-			// Lookup the next byte of recovered from the current window
-			// encrypted output.
-			b, ok := dictionary[string(out[window:window+bs])]
-			if !ok {
-				t.Fatalf("Failed lookup for block %d index %d", window, i)
-			}
-			recovered += string(b)
-
-			if len(recovered) == len(secret) {
-				break outer
-			}
-		}
-		window += bs
-	}
-
+	recovered := recoverSecretFromECB(oracle, len(secret), 0, 0, bs)
 	if recovered != `Rollin' in my 5.0
 With my rag-top down so my hair can blow
 The girlies on standby waving just to say hi
@@ -236,24 +204,7 @@ func TestChallenge14(t *testing.T) {
 	}
 	t.Logf("prefix found, need %d bytes of padding, clean idx is %d", pad, window)
 
-	recovered := ""
-outer:
-	for {
-		for i := 0; i < bs; i++ {
-			dict := fragmentDict(recovered, oracle, window, i+1, pad, bs)
-			fragment := bytes.Repeat([]byte{192}, pad+(bs-(i+1)))
-			out := oracle(fragment)
-			b, ok := dict[string(out[window:window+bs])]
-			if !ok {
-				t.Fatalf("Failed lookup for block %d index %d", window, i)
-			}
-			recovered += string(b)
-			if len(recovered) == len(secret) {
-				break outer
-			}
-		}
-		window += bs // Move to the next block
-	}
+	recovered := recoverSecretFromECB(oracle, len(secret), window, pad, bs)
 	if recovered != `Rollin' in my 5.0
 With my rag-top down so my hair can blow
 The girlies on standby waving just to say hi
