@@ -2,7 +2,6 @@ package cryptopals
 
 import (
 	"bytes"
-	"crypto/aes"
 	"encoding/base64"
 	"math/rand"
 	"net/url"
@@ -27,13 +26,8 @@ func TestChallenge9(t *testing.T) {
 
 func TestChallenge10(t *testing.T) {
 	cipherdata := decodeBase64File(t, "testdata/challenge_10.txt")
-	cipher, err := aes.NewCipher([]byte("YELLOW SUBMARINE"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	plaintext := make([]byte, len(cipherdata))
-	iv := make([]byte, cipher.BlockSize())
-	decryptCBC(plaintext, []byte(cipherdata), iv, cipher)
+	oracle := decryptCBCOracle([]byte("YELLOW SUBMARINE"))
+	plaintext := oracle(cipherdata)
 	if !strings.HasPrefix(string(plaintext), "I'm back and I'm ringin' the bell \nA rockin' on the mike while the fly girls yell") {
 		t.Error("Did not CBC decrypt correctly")
 	}

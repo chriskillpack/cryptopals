@@ -151,6 +151,17 @@ outer:
 	return recovered
 }
 
+func decryptCBCOracle(key []byte) OracleFunc {
+	cipher, _ := aes.NewCipher(key)
+
+	return func(in []byte) []byte {
+		plaintext := make([]byte, len(in))
+		iv := make([]byte, cipher.BlockSize())
+		decryptCBC(plaintext, []byte(in), iv, cipher)
+		return plaintext
+	}
+}
+
 func encryptionOracle() OracleFunc {
 	prefix := make([]byte, rand.Intn(5)+5)
 	crand.Read(prefix)
