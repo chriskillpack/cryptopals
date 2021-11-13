@@ -25,6 +25,21 @@ func pkcs7Padding(data []byte, blocksize int) []byte {
 	return append(data, padding...)
 }
 
+// stripped=nil,valid=false if the input has invalid padding
+func removePkcs7Padding(data []byte) (stripped []byte, valid bool) {
+	pad := data[len(data)-1]
+	idx := len(data) - 2
+	for ; idx > len(data)-int(pad)-1; idx-- {
+		if data[idx] != pad {
+			return nil, false
+		}
+	}
+	idx++ // "back up" to last position
+	out := make([]byte, idx)
+	copy(out, data[:idx])
+	return out, true
+}
+
 func encryptECB(out, in []byte, cipher cipher.Block) {
 	if len(out) != len(in) {
 		panic("Unequal length buffers")

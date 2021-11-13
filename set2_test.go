@@ -213,3 +213,27 @@ Did you stop? No, I just drove by
 		t.Errorf("This is not the correct secret %q", recovered)
 	}
 }
+
+func TestChallenge15(t *testing.T) {
+	tests := []struct {
+		name         string
+		in           []byte
+		wantStripped []byte
+		wantValid    bool
+	}{
+		{"valid", []byte("ICE ICE BABY\x04\x04\x04\x04"), []byte("ICE ICE BABY"), true},
+		{"invalid pad count", []byte("ICE ICE BABY\x05\x05\x05\x05"), nil, false},
+		{"varying pad byte", []byte("ICE ICE BABY\x01\x02\x03\x04"), nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotStripped, gotValid := removePkcs7Padding(tt.in)
+			if !bytes.Equal(gotStripped, tt.wantStripped) {
+				t.Errorf("removePkcs7Padding() gotStripped = %v, want %v", gotStripped, tt.wantStripped)
+			}
+			if gotValid != tt.wantValid {
+				t.Errorf("removePkcs7Padding() gotValid = %v, want %v", gotValid, tt.wantValid)
+			}
+		})
+	}
+}
