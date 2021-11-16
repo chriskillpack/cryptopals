@@ -231,3 +231,39 @@ func TestChallenge15(t *testing.T) {
 		})
 	}
 }
+
+func TestChallenge16(t *testing.T) {
+	// I don't think it is cheating to know how long the oracle prefix is
+	lp := len("comment1%61cooking%20MCs;userdata%61")
+	pad := 16 - (lp % 16) // how much padding to start of next block
+
+	admin := []byte(";admin=true;")
+
+	// Need one scratch block (that is trashed because of tampering with
+	// ciphertext), room for adminStr and then some stuff at the end.
+	size := 48
+	data := bytes.Repeat([]byte{192}, size)
+
+	oracleEnc, oracleDec := cbcBitFlipOracle()
+	cipher := oracleEnc(data)
+
+	// Compute the XOR 'mask' between adminStr and the data payload that we
+	// encrypted. This mask will contain the bits that need flipping in the
+	// ciphertext to generate adminStr in the decryption.
+	mask := xor(data[:len(admin)], admin)
+
+	// XOR the mask into the ciphertext to flip the necessary bits. This will
+	// cause the block that contains the bitflips to be "corrupted" and the
+	// following block to contain the bit flips applied to the user data, which
+	// in our case will flip bytes over to make the admin string. The corruption
+	// is fine because the 'server' we are attacking does not validate the
+	// decrypted data before looking for the admin string.
+	co := lp + pad // byte offset into ciphertext
+	temp := xor(cipher[co:co+len(admin)], mask)
+	copy(cipher[co:co+len(admin)], temp)
+
+	plaintext := string(oracleDec(cipher))
+	if !strings.Contains(plaintext, ";admin=true;") {
+		t.Error("Could not find admin=true in decrypted message")
+	}
+}

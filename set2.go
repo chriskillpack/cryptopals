@@ -5,7 +5,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	crand "crypto/rand"
-	"fmt"
 	"math/rand"
 	"net/url"
 	"strings"
@@ -86,16 +85,16 @@ func decryptCBC(out, in, iv []byte, cipher cipher.Block) {
 	}
 }
 
-func randomAESkey() ([]byte, error) {
+func randomAESkey() []byte {
 	key := make([]byte, 16)
 	n, err := crand.Read(key)
 	if err != nil {
 		panic(err)
 	}
 	if n != 16 {
-		return nil, fmt.Errorf("did not get 16 random bytes")
+		return nil
 	}
-	return key, nil
+	return key
 }
 
 // Builds a 'fragment' dictionary using the encryption oracle to encrypt every
@@ -168,8 +167,7 @@ func encryptionOracle() OracleFunc {
 	suffix := make([]byte, rand.Intn(5)+5)
 	crand.Read(suffix)
 
-	key, _ := randomAESkey()
-	cipher, _ := aes.NewCipher(key)
+	cipher, _ := aes.NewCipher(randomAESkey())
 
 	return func(in []byte) []byte {
 		// ENCRYPT(prefix | in | suffix) where | denotes concatenation
@@ -190,8 +188,7 @@ func encryptionOracle() OracleFunc {
 // secret will be concatenated to in prior to encryption. Passing nil or an
 // empty byte slice to
 func consistentECBOracle(secret []byte) OracleFunc {
-	key, _ := randomAESkey()
-	cipher, _ := aes.NewCipher(key)
+	cipher, _ := aes.NewCipher(randomAESkey())
 
 	return func(in []byte) []byte {
 		body := pkcs7Padding(append(in, secret...), cipher.BlockSize())
@@ -201,8 +198,7 @@ func consistentECBOracle(secret []byte) OracleFunc {
 }
 
 func encryptDecryptECBOracle() (enc, dec OracleFunc) {
-	key, _ := randomAESkey()
-	cipher, _ := aes.NewCipher(key)
+	cipher, _ := aes.NewCipher(randomAESkey())
 
 	return func(in []byte) []byte {
 			body := pkcs7Padding(in, cipher.BlockSize())
@@ -218,8 +214,7 @@ func encryptDecryptECBOracle() (enc, dec OracleFunc) {
 }
 
 func randomPrefixSecretECBOracle(secret []byte) OracleFunc {
-	key, _ := randomAESkey()
-	cipher, _ := aes.NewCipher(key)
+	cipher, _ := aes.NewCipher(randomAESkey())
 
 	prefix := make([]byte, rand.Intn(32)+10)
 	crand.Read(prefix)
@@ -229,6 +224,35 @@ func randomPrefixSecretECBOracle(secret []byte) OracleFunc {
 		encryptECB(body, body, cipher)
 		return body
 	}
+}
+
+func cbcBitFlipOracle() (enc OracleFunc, dec OracleFunc) {
+	cipher, _ := aes.NewCipher(randomAESkey())
+
+	const (
+		prefix = "comment1=cooking%20MCs;userdata="
+		suffix = ";comment2=%20like%20a%20pound%20of%20bacon"
+	)
+	return func(in []byte) []byte {
+			body := append(append([]byte(prefix), in...), []byte(suffix)...)
+			body = bytes.ReplaceAll(body, []byte("&"), []byte("%38"))
+			body = bytes.ReplaceAll(body, []byte("="), []byte("%61"))
+			body = pkcs7Padding(body, 16)
+			iv := make([]byte, 16)
+			encryptCBC(body, body, iv, cipher)
+			return body
+		}, func(in []byte) []byte {
+			iv := make([]byte, 16)
+			out := make([]byte, len(in))
+			decryptCBC(out, in, iv, cipher)
+			stripped, valid := removePkcs7Padding(out)
+			if !valid {
+				return nil
+			}
+			stripped = bytes.ReplaceAll(stripped, []byte("%38"), []byte("&"))
+			stripped = bytes.ReplaceAll(stripped, []byte("%61"), []byte("="))
+			return stripped
+		}
 }
 
 func profileFor(email string) (string, error) {
