@@ -49,7 +49,7 @@ func encryptECB(out, in []byte, cipher cipher.Block) {
 	}
 }
 
-// WARNING: This has not been tested yet
+// out and in must overlap entirely or not at all.
 // iv = Initialization Vector, the contents are overwritten
 func encryptCBC(out, in, iv []byte, cipher cipher.Block) {
 	if len(out) != len(in) {
@@ -67,6 +67,7 @@ func encryptCBC(out, in, iv []byte, cipher cipher.Block) {
 	}
 }
 
+// out and in must overlap entirely or not at all.
 // iv = Initialization Vector, the contents are overwritten
 func decryptCBC(out, in, iv []byte, cipher cipher.Block) {
 	if len(out) != len(in) {
@@ -76,12 +77,14 @@ func decryptCBC(out, in, iv []byte, cipher cipher.Block) {
 		panic("IV incorrect length")
 	}
 
+	temp := make([]byte, 16) // YUCK, necessary to support out and in overlapping
+
 	bs := cipher.BlockSize()
 	for i := 0; i < len(in); i += bs {
+		copy(temp, in[i:i+bs])
 		cipher.Decrypt(out[i:i+bs], in[i:i+bs])
-		scratch := xor(out[i:i+bs], iv)
-		copy(out[i:i+bs], scratch)
-		copy(iv, in[i:i+bs])
+		copy(out[i:i+bs], xor(out[i:i+bs], iv))
+		copy(iv, temp)
 	}
 }
 
