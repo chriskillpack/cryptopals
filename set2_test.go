@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"math/rand"
-	"net/url"
 	"strings"
 	"testing"
 )
@@ -93,7 +92,7 @@ Did you stop? No, I just drove by
 }
 
 func TestChallenge13(t *testing.T) {
-	encOracle, decOracle := encryptDecryptECBOracle()
+	encOracle, isAdmin := cutAndPasteECBOracle()
 
 	// Another weakness of ECB is that each block is encrypted separately so an
 	// attacker can re-arrange or substitute blocks without detection.
@@ -116,16 +115,9 @@ func TestChallenge13(t *testing.T) {
 	block2 := encOracle([]byte(prof))[0:32]
 	attack := append(block2, block1...)
 
-	// Attacker sets cookie to attack and sends it to web server which decrypts
-	// and checks.
-	recov := decOracle(attack)
-	values, err := url.ParseQuery(string(recov))
-	if err != nil {
-		t.Fatal(err)
-	}
-	role := values.Get("role")
-	if role != "admin" {
-		t.Errorf("Was expecting admin role, got %q", role)
+	// Attacker provides modified cookie to server's admin role checker...
+	if !isAdmin(attack) {
+		t.Error("Did not get admin role")
 	}
 }
 
@@ -244,7 +236,7 @@ func TestChallenge16(t *testing.T) {
 	size := 48
 	data := bytes.Repeat([]byte{192}, size)
 
-	oracleEnc, oracleDec := cbcBitFlipOracle()
+	oracleEnc, isAdmin := cbcBitFlipOracle()
 	cipher := oracleEnc(data)
 
 	// Compute the XOR 'mask' between adminStr and the data payload that we
@@ -262,8 +254,7 @@ func TestChallenge16(t *testing.T) {
 	temp := xor(cipher[co:co+len(admin)], mask)
 	copy(cipher[co:co+len(admin)], temp)
 
-	plaintext := string(oracleDec(cipher))
-	if !strings.Contains(plaintext, ";admin=true;") {
+	if !isAdmin(cipher) {
 		t.Error("Could not find admin=true in decrypted message")
 	}
 }

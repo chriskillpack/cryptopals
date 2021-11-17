@@ -197,19 +197,23 @@ func consistentECBOracle(secret []byte) OracleFunc {
 	}
 }
 
-func encryptDecryptECBOracle() (enc, dec OracleFunc) {
+func cutAndPasteECBOracle() (enc OracleFunc, isAdmin func([]byte) bool) {
 	cipher, _ := aes.NewCipher(randomAESkey())
 
 	return func(in []byte) []byte {
 			body := pkcs7Padding(in, cipher.BlockSize())
 			encryptECB(body, body, cipher)
 			return body
-		}, func(in []byte) []byte {
+		}, func(in []byte) bool {
 			body := make([]byte, len(in))
 			copy(body, in)
 			decryptECB(body, body, cipher)
-			// TODO: discard padding?
-			return body
+
+			values, err := url.ParseQuery(string(body))
+			if err != nil {
+				return false
+			}
+			return values.Get("role") == "admin"
 		}
 }
 
@@ -226,8 +230,10 @@ func randomPrefixSecretECBOracle(secret []byte) OracleFunc {
 	}
 }
 
-func cbcBitFlipOracle() (enc OracleFunc, dec OracleFunc) {
+func cbcBitFlipOracle() (enc OracleFunc, isAdmin func([]byte) bool) {
 	cipher, _ := aes.NewCipher(randomAESkey())
+	iv := make([]byte, 16)
+	crand.Read(iv)
 
 	const (
 		prefix = "comment1=cooking%20MCs;userdata="
@@ -238,20 +244,18 @@ func cbcBitFlipOracle() (enc OracleFunc, dec OracleFunc) {
 			body = bytes.ReplaceAll(body, []byte("&"), []byte("%38"))
 			body = bytes.ReplaceAll(body, []byte("="), []byte("%61"))
 			body = pkcs7Padding(body, 16)
-			iv := make([]byte, 16)
 			encryptCBC(body, body, iv, cipher)
 			return body
-		}, func(in []byte) []byte {
-			iv := make([]byte, 16)
+		}, func(in []byte) bool {
 			out := make([]byte, len(in))
 			decryptCBC(out, in, iv, cipher)
 			stripped, valid := removePkcs7Padding(out)
 			if !valid {
-				return nil
+				return false
 			}
 			stripped = bytes.ReplaceAll(stripped, []byte("%38"), []byte("&"))
 			stripped = bytes.ReplaceAll(stripped, []byte("%61"), []byte("="))
-			return stripped
+			return strings.Contains(string(stripped), ";admin=true;")
 		}
 }
 
