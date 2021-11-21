@@ -50,7 +50,7 @@ func encryptECB(out, in []byte, cipher cipher.Block) {
 }
 
 // out and in must overlap entirely or not at all.
-// iv = Initialization Vector, the contents are overwritten
+// iv = Initialization Vector
 func encryptCBC(out, in, iv []byte, cipher cipher.Block) {
 	if len(out) != len(in) {
 		panic("Unequal length buffers")
@@ -59,16 +59,20 @@ func encryptCBC(out, in, iv []byte, cipher cipher.Block) {
 		panic("IV incorrect length")
 	}
 
+	// The encryption loop overwrites iv so make a copy
+	civ := make([]byte, len(iv))
+	copy(civ, iv)
+
 	bs := cipher.BlockSize()
 	for i := 0; i < len(in); i += bs {
-		scratch := xor(in[i:i+bs], iv)
+		scratch := xor(in[i:i+bs], civ)
 		cipher.Encrypt(out[i:i+bs], scratch)
-		copy(iv, out[i:i+bs])
+		copy(civ, out[i:i+bs])
 	}
 }
 
 // out and in must overlap entirely or not at all.
-// iv = Initialization Vector, the contents are overwritten
+// iv = Initialization Vector
 func decryptCBC(out, in, iv []byte, cipher cipher.Block) {
 	if len(out) != len(in) {
 		panic("Unequal length buffers")
@@ -78,13 +82,15 @@ func decryptCBC(out, in, iv []byte, cipher cipher.Block) {
 	}
 
 	temp := make([]byte, 16) // YUCK, necessary to support out and in overlapping
+	civ := make([]byte, len(iv))
+	copy(civ, iv)
 
 	bs := cipher.BlockSize()
 	for i := 0; i < len(in); i += bs {
 		copy(temp, in[i:i+bs])
 		cipher.Decrypt(out[i:i+bs], in[i:i+bs])
-		copy(out[i:i+bs], xor(out[i:i+bs], iv))
-		copy(iv, temp)
+		copy(out[i:i+bs], xor(out[i:i+bs], civ))
+		copy(civ, temp)
 	}
 }
 
